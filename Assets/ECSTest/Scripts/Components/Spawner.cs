@@ -10,4 +10,6 @@ public struct Spawner : IComponentData
 
     public float SpawnRadius;       // 新增：生成半径
     public float2 SpawnAreaSize;    // 新增：生成区域尺寸(XZ平面)
+
+    public int SpawnCount;          // 新增：生成的实体数
 }
