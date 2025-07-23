@@ -10,40 +10,17 @@ using Unity.Transforms;
 [BurstCompile]
 public partial struct OptimizedSpawnerSystem : ISystem
 {
-    // 用于统计所有生成器
-    private EntityQuery spawnerQuery;
-
     // 计时器
     private float _lastDisplayTime;
     private int _cachedTotalCount;
 
     public void OnCreate(ref SystemState state) 
     {
-        // 初始化单例实体（包含Random和Counter）
-        //state.EntityManager.CreateEntity(
-        //    typeof(RandomComponent),
-        //    typeof(SpawnCounter)
-        //);
         state.EntityManager.CreateEntity(typeof(RandomComponent));
         SystemAPI.SetSingleton(new RandomComponent { Random = new Unity.Mathematics.Random(123) });
 
-        //SystemAPI.SetSingleton(new SpawnCounter { Count = 0 });
-
-        // 创建查询用于统计生成器数量
-        spawnerQuery = SystemAPI.QueryBuilder()
-            .WithAll<Spawner>()
-            .Build();
-
-
         _lastDisplayTime = 0;
         _cachedTotalCount = 0;
-
-        // 让实体在 Editor 可见
-        //#if UNITY_EDITOR
-        //state.EntityManager.SetName(randomEntity, "RandomGenerator");
-        //#endif
-
-
 
     }
 
@@ -56,9 +33,8 @@ public partial struct OptimizedSpawnerSystem : ISystem
         EntityCommandBuffer.ParallelWriter ecb = GetEntityCommandBuffer(ref state);
 
         var random = SystemAPI.GetSingletonRW<RandomComponent>();
-        //var counter = SystemAPI.GetSingletonRW<SpawnCounter>();
-        //Entity singletonEntity = SystemAPI.GetSingletonEntity<SpawnCounter>();
-        //var counter = SystemAPI.GetComponentRW<SpawnCounter>(singletonEntity);
+        var spawnerQuery = SystemAPI.QueryBuilder().WithAll<Spawner>().Build();
+
 
         // 获取当前生成器数量
         int spawnerCount = spawnerQuery.CalculateEntityCount();
@@ -78,15 +54,15 @@ public partial struct OptimizedSpawnerSystem : ISystem
 
         // 每0.5秒更新一次显示（避免每帧计算）
         float currentTime = (float)SystemAPI.Time.ElapsedTime;
-        if (currentTime - _lastDisplayTime > 0.5f)
+        if (currentTime - _lastDisplayTime > 1f)
         {
             state.Dependency.Complete(); // 确保Job完成
             _lastDisplayTime = currentTime;
             _cachedTotalCount = CalculateTotalSpawnCount(ref state);
 
-#if UNITY_EDITOR
-            UnityEngine.Debug.Log($"总生成数: {_cachedTotalCount} (来自 {spawnerQuery.CalculateEntityCount()} 个生成器)");
-#endif
+//#if UNITY_EDITOR
+//          UnityEngine.Debug.Log($"总生成数: {_cachedTotalCount} (来自 {spawnerQuery.CalculateEntityCount()} 个生成器)");
+//#endif
         }
 
     }
@@ -150,9 +126,6 @@ public partial struct ProcessSpawnerJob : IJobEntity
 
             // 添加组件
             Ecb.SetComponent(chunkIndex, newEntity, LocalTransform.FromPosition(spawnPosition));
-
-            // 更新计数（线程安全方式）
-            //Counter.ValueRW.Count += 1;
 
             // 更新计数
             spawner.SpawnCount += 1;
