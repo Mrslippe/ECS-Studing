@@ -6,7 +6,9 @@ using Unity.Collections.LowLevel.Unsafe;
 using Unity.Entities;
 using Unity.Jobs;
 using Unity.Mathematics;
+using Unity.Rendering;
 using Unity.Transforms;
+using UnityEngine;
 using static UnityEngine.EventSystems.EventTrigger;
 
 
@@ -14,22 +16,31 @@ using static UnityEngine.EventSystems.EventTrigger;
 public partial struct MapGenerationSystem : ISystem
 {
     // 每帧生成的格子数量
-    private const int BatchSize = 10;
+    private const int BatchSize = 100;
 
+    
 
     public void OnCreate(ref SystemState state)
     {
-        // 依赖声明
-        //state.RequireForUpdate<MapGridSettings>();
-        //state.RequireForUpdate<MapGenerationState>();
-
+        state.RequireForUpdate<MapGridSettings>();
+        state.RequireForUpdate<MapGenerationState>();
         state.EntityManager.CreateEntity(typeof(MapGenerationState));
+
+        // 确保依赖系统存在
+        state.World.GetOrCreateSystemManaged<BeginSimulationEntityCommandBufferSystem>();
+        // 延迟获取（下一帧才能获取到）
+        state.RequireForUpdate<BeginSimulationEntityCommandBufferSystem.Singleton>();
+
     }
 
 
     [BurstCompile]
     public void OnUpdate(ref SystemState state)
     {
+
+        var _ecbSystem = SystemAPI.GetSingleton<BeginSimulationEntityCommandBufferSystem.Singleton>();    
+        var ecb = _ecbSystem.CreateCommandBuffer(state.WorldUnmanaged).AsParallelWriter();
+
         var mapSettings = SystemAPI.GetSingleton<MapGridSettings>();
         var generationState = SystemAPI.GetSingletonRW<MapGenerationState>();
 
@@ -43,13 +54,10 @@ public partial struct MapGenerationSystem : ISystem
             return;
         }
 
-
         var entityManager = state.EntityManager;
-        // var ecb = new EntityCommandBuffer(Allocator.TempJob);
-        EntityCommandBuffer ecb = GetEntityCommandBuffer(ref state);
 
         // 分阶段生成地图
-        new GenerateGridJob
+        state.Dependency = new GenerateGridJob
         {
             StartIndex = generated,
             Count = toGenerate,
@@ -57,71 +65,69 @@ public partial struct MapGenerationSystem : ISystem
             CellSize = mapSettings.CellSize,
             StartPosition = mapSettings.StartPosition,
             TilePrefab = mapSettings.TilePrefab,
-            ObstaclePrefab = mapSettings.ObstaclePrefab,
-            Ecb = ecb.AsParallelWriter()
-        }.ScheduleParallel(state.Dependency);
+            Ecb = ecb
+        }.ScheduleParallel(toGenerate, 64, state.Dependency); ;
 
-        state.Dependency.Complete();
-
-        ecb.Playback(entityManager);
-        ecb.Dispose();
-
-        generationState.ValueRW.GeneratedLayers += generated;
+        generationState.ValueRW.GeneratedLayers += toGenerate; // 修正累加值
 
     }
 
-
-    private EntityCommandBuffer GetEntityCommandBuffer(ref SystemState state)
-    {
-        if (!SystemAPI.TryGetSingleton(out BeginSimulationEntityCommandBufferSystem.Singleton ecbSingleton))
-        {
-            throw new SystemException("ECB System not found");
-        }
-        ecbSingleton = SystemAPI.GetSingleton<BeginSimulationEntityCommandBufferSystem.Singleton>();
-        var ecb = ecbSingleton.CreateCommandBuffer(state.WorldUnmanaged);
-        return ecb;
-    }
 
 
     [BurstCompile]
-    public partial struct GenerateGridJob : IJobEntity
+    public partial struct GenerateGridJob : IJobFor
     {
         public int StartIndex;
         public int Count;
-
         public int2 GridSize;
         public float CellSize;
         public float3 StartPosition;
-        public Entity TilePrefab;
-        public Entity ObstaclePrefab;
+
+        [ReadOnly] public Entity TilePrefab;
 
         public EntityCommandBuffer.ParallelWriter Ecb;
 
 
-        public void Execute([EntityIndexInQuery] int index)
+        public void Execute(int index)
         {
+            bool isObstacle = false;
+
             int flatIndex = StartIndex + index;
+            if (flatIndex >= GridSize.x * GridSize.y) 
+                return; // 防止越界
             int x = flatIndex % GridSize.x;
             int y = flatIndex / GridSize.x;
-            var gridEntity = Ecb.CreateEntity(index);
-            var gridPos = new GridPosition { Coordinate = new int2(x, y) };
-            Ecb.AddComponent(index, gridEntity, gridPos);
+
+            var grid = new Grid { Coordinate = new int2(x, y) };
 
             // 计算世界坐标
             float3 worldPos = StartPosition + new float3(x * CellSize, 0, y * CellSize);
 
-            // 创建地形瓦片
-            Entity tile = Ecb.Instantiate(index, TilePrefab);
-            Ecb.SetComponent(index, tile, LocalTransform.FromPosition(worldPos));
-
             // 30%概率生成障碍物
-            uint seed = (uint)(x * 73856093 ^ y * 19349663);
+            uint seed = (uint)(x * 0x9E3779B9 + y * 0x6E624EB7);
             if (Unity.Mathematics.Random.CreateFromIndex(seed).NextFloat() < 0.3f)
+                isObstacle = true;
+            else
+                isObstacle = false;
+
+            // 先创建实体再统一添加组件
+            Entity entity = Ecb.Instantiate(index, TilePrefab);
+            Ecb.SetComponent(index, entity, LocalTransform.FromPosition(worldPos));
+            Ecb.AddComponent(index, entity, new Grid { Coordinate = new int2(x, y) });
+            if (isObstacle)
             {
-                Entity obstacle = Ecb.Instantiate(index, ObstaclePrefab);
-                Ecb.SetComponent(index, obstacle,
-                    LocalTransform.FromPosition(worldPos + new float3(0, 0.1f, 0)));
+                Ecb.AddComponent(index, entity, new Obstacle { isObstacle = true });
+                Ecb.AddComponent(index, entity, new HybridColor { Value = new float4(0f, 0f, 0f, 0f) });
+                // Ecb.SetComponent(index, entity, new URPMaterialPropertyBaseColor { Value = new float4(0f, 0f, 0f, 0f) });
             }
+            else
+            {
+                Ecb.AddComponent(index, entity, new HybridColor { Value = new float4(0.7215686f, 1f, 0.5882353f, 1f) });
+                // Ecb.SetComponent(index, entity, new URPMaterialPropertyBaseColor 
+                                                                // { Value = new float4(0.7215686f, 1f, 0.5882353f, 1f) });
+            }
+                
+
         }
     }
 

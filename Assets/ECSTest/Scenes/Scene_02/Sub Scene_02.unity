@@ -157,9 +157,7 @@ MonoBehaviour:
     x: 20
     y: 20
   cellSize: 1
-  tilePrefab: {fileID: 7557691091286827177, guid: 031131217c0b5204bafcb7f3d3651a20,
-    type: 3}
-  obstaclePrefab: {fileID: 1728965691791135618, guid: cf2316af23f1b394d98d59202aa60dc6,
+  tilePrefab: {fileID: 7036362199581242061, guid: 8d9c049ce6006b142924a27757deb53f,
     type: 3}
   obstacleDensity: 0.145
 --- !u!4 &102478193

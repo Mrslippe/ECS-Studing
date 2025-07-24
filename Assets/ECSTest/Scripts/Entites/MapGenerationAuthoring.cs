@@ -12,7 +12,6 @@ public class MapConfigAuthoring : MonoBehaviour
 
     [Header("预制体")]
     public GameObject tilePrefab;
-    public GameObject obstaclePrefab;
 
     [Header("地形生成")]
     [Range(0, 1)] public float obstacleDensity = 0.3f;
@@ -33,7 +32,6 @@ public class MapConfigBaker : Baker<MapConfigAuthoring>
             GridSize = new int2(authoring.gridSize.x, authoring.gridSize.y),
             CellSize = authoring.cellSize,
             TilePrefab = GetEntity(authoring.tilePrefab, TransformUsageFlags.Dynamic),
-            ObstaclePrefab = GetEntity(authoring.obstaclePrefab, TransformUsageFlags.Dynamic),
         });
 
 

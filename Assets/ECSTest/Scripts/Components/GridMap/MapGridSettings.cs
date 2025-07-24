@@ -16,15 +16,19 @@ public struct MapGridSettings : IComponentData
     public int2 GridSize;          // 网格尺寸 (如 10x10 )
     public float CellSize;         // 每个格子单位尺寸
     public Entity TilePrefab;      // 基础瓦片预制体
-    public Entity ObstaclePrefab;  // 障碍物预制体
 }
 
 /// <summary>
-/// 网格位置
+/// 网格组件
 /// </summary>
-public struct GridPosition : IComponentData
+public struct Grid : IComponentData
 {
     public int2 Coordinate;  // 网格坐标 (如 [2,3])
+}
+
+public struct Obstacle : IComponentData
+{
+    public bool isObstacle;
 }
 
 
